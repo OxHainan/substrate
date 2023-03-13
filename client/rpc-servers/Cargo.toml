@@ -13,7 +13,7 @@ readme = "README.md"
 targets = ["x86_64-unknown-linux-gnu"]
 
 [dependencies]
-jsonrpsee = { version = "0.16.2", features = ["server"] }
+jsonrpsee = { version = "0.16.2", features = ["server", "server-with-tls"] }
 log = "0.4.17"
 serde_json = "1.0.85"
 tokio = { version = "1.22.0", features = ["parking_lot"] }
@@ -21,3 +21,5 @@ prometheus-endpoint = { package = "substrate-prometheus-endpoint", version = "0.
 tower-http = { version = "0.3.4", features = ["cors"] }
 tower = "0.4.13"
 http = "0.2.8"
+rustls-pemfile = "1.0.0"
+rustls = "0.20.8"

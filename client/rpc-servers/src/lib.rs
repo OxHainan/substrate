@@ -98,10 +98,14 @@ pub async fn start_http<M: Send + Sync + 'static>(
 		// Proxy `GET /health` requests to internal `system_health` method.
 		.layer(ProxyGetRequestLayer::new("/health", "system_health")?)
 		.layer(try_into_cors(cors)?);
-
+    // Load public certificate.
+    let certs = load_certs("/root/ca/cert.crt")?;
+    // Load private key.
+    let key = load_private_key("/root/ca/private.key")?;
 	let builder = ServerBuilder::new()
 		.max_request_body_size(max_payload_in)
 		.max_response_body_size(max_payload_out)
+		.set_tls(certs, key)
 		.set_host_filtering(host_filter)
 		.set_middleware(middleware)
 		.custom_tokio_runtime(rt)
@@ -146,13 +150,18 @@ pub async fn start<M: Send + Sync + 'static>(
 		// Proxy `GET /health` requests to internal `system_health` method.
 		.layer(ProxyGetRequestLayer::new("/health", "system_health")?)
 		.layer(try_into_cors(cors)?);
-
+    // Load public certificate.
+    let certs = load_certs("/root/ca/cert.crt")?;
+    // Load private key.
+    let key = load_private_key("/root/ca/private.key")?;
+	
 	let mut builder = ServerBuilder::new()
 		.max_request_body_size(max_payload_in)
 		.max_response_body_size(max_payload_out)
 		.max_connections(max_connections)
 		.max_subscriptions_per_connection(max_subs_per_conn)
 		.ping_interval(std::time::Duration::from_secs(30))
+		.set_tls(certs, key)
 		.set_host_filtering(host_filter)
 		.set_middleware(middleware)
 		.custom_tokio_runtime(rt);
@@ -237,4 +246,36 @@ fn format_cors(maybe_cors: Option<&Vec<String>>) -> String {
 	} else {
 		format!("{:?}", ["*"])
 	}
+}
+
+
+
+// Load public certificate from file.
+fn load_certs(filename: &str) -> std::io::Result<Vec<rustls::Certificate>> {
+	// Open certificate file.
+	let certfile = std::fs::File::open(filename).map_err(|e| error(format!("failed to open {}: {}", filename, e)))?;
+	let mut reader = std::io::BufReader::new(certfile);
+
+	// Load and return certificate.
+	let certs = rustls_pemfile::certs(&mut reader).map_err(|_| error("failed to load certificate".into()))?;
+	Ok(certs.into_iter().map(rustls::Certificate).collect())
+}
+
+fn error(err: String) -> std::io::Error {
+	std::io::Error::new(std::io::ErrorKind::Other, err)
+}
+
+// Load private key from file.
+fn load_private_key(filename: &str) -> std::io::Result<rustls::PrivateKey> {
+	// Open keyfile.
+	let keyfile = std::fs::File::open(filename).map_err(|e| error(format!("failed to open {}: {}", filename, e)))?;
+	let mut reader = std::io::BufReader::new(keyfile);
+
+	// Load and return a single private key.
+	let keys = rustls_pemfile::pkcs8_private_keys(&mut reader).map_err(|_| error("failed to load private key".into()))?;
+	if keys.len() != 1 {
+		return Err(error("expected a single private key".into()));
+	}
+
+	Ok(rustls::PrivateKey(keys[0].clone()))
 }

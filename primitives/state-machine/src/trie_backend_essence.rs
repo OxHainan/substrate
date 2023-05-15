@@ -490,9 +490,11 @@ where
 	/// Get the value of storage at given key.
 	pub fn storage(&self, key: &[u8]) -> Result<Option<StorageValue>> {
 		let map_e = |e| format!("Trie lookup error: {}", e);
-
+		// use rustc_hex::ToHex;
 		self.with_recorder_and_cache(None, |recorder, cache| {
-			read_trie_value::<Layout<H>, _>(self, &self.root, key, recorder, cache).map_err(map_e)
+			read_trie_value::<Layout<H>, _>(self, &self.root, key, recorder, cache)
+				.map(|x| x.as_ref().map(|v| sp_core::aes::decrypt(v.as_ref(), key).unwrap()))
+				.map_err(map_e)
 		})
 	}
 
@@ -589,6 +591,17 @@ where
 		state_version: StateVersion,
 	) -> (H::Out, S::Overlay) {
 		let mut write_overlay = S::Overlay::default();
+
+		let mut deltas: Vec<_> = Default::default();
+		for (key, val) in delta {
+			if let Some(val) = val {
+				deltas.push((key, Some(sp_core::aes::encrypt(val, key).unwrap())));
+			} else {
+				deltas.push((key, None));
+			}
+		}
+
+		let delta = deltas.iter().map(|(k, v)| (*k, v.as_ref().map(|v| &v[..])));
 
 		let root = self.with_recorder_and_cache_for_storage_root(None, |recorder, cache| {
 			let mut eph = Ephemeral::new(self.backend_storage(), &mut write_overlay);

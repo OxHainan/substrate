@@ -67,6 +67,9 @@ pub mod testing;
 pub mod traits;
 pub mod uint;
 
+#[cfg(feature = "std")]
+pub mod aes;
+
 pub use self::{
 	hash::{convert_hash, H160, H256, H512},
 	uint::{U256, U512},

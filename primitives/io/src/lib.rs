@@ -1092,6 +1092,24 @@ pub trait Crypto {
 		.secret_bytes())
 	}
 
+	/// Generate a SECP256k1 ECDSA signature.
+	///
+	/// - `msg` is the blake2-256 hash of the message.
+	///
+	/// Returns `Err` if the signature is bad, otherwise the signature.
+	/// (doesn't include the 0x04 prefix).
+	/// This version is able to handle, non-standard, overflowing signatures.
+	fn secp256k1_ecdsa_sign(private_key: &[u8; 32], msg: &[u8; 32]) -> Option<ecdsa::Signature> {
+		let s = libsecp256k1::sign(
+			&libsecp256k1::Message::parse(msg),
+			&libsecp256k1::SecretKey::parse_slice(&private_key[..]).unwrap(),
+		);
+		let mut bytes = [0u8; 65];
+		bytes[0..64].copy_from_slice(&s.0.serialize());
+		bytes[64] = s.1.serialize();
+		Some(ecdsa::Signature::from_raw(bytes))
+	}
+
 	/// Verify and recover a SECP256k1 ECDSA signature.
 	///
 	/// - `sig` is passed in RSV format. V should be either `0/1` or `27/28`.

@@ -50,6 +50,8 @@ sp-blockchain = { version = "4.0.0-dev", path = "../../primitives/blockchain" }
 sp-consensus = { version = "0.10.0-dev", path = "../../primitives/consensus/common" }
 sp-core = { version = "7.0.0", path = "../../primitives/core" }
 sp-runtime = { version = "7.0.0", path = "../../primitives/runtime" }
+occlum-dcap = { path = "../../utils/dcap-lib" }
+web3 = { version = "0.19.1", branch = "master", git = "https://github.com/tomusdrw/rust-web3.git"}
 
 [dev-dependencies]
 assert_matches = "1.3"

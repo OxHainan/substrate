@@ -57,6 +57,13 @@ use std::{
 	time,
 };
 
+use occlum_dcap::*;
+use web3::{
+	Web3,
+	transports::Http,
+	contract::{Contract, Options},
+};
+
 mod notifications;
 
 pub mod message;
@@ -96,6 +103,8 @@ mod rep {
 	pub const BAD_ROLE: Rep = Rep::new_fatal("Unsupported role");
 	/// Peer send us a block announcement that failed at validation.
 	pub const BAD_BLOCK_ANNOUNCEMENT: Rep = Rep::new(-(1 << 12), "Bad block announcement");
+	/// Peer has a incorrect quote or fail to get quote from L1
+	pub const BAD_TEE_QUOTE:Rep = Rep::new_fatal("TEE quote or fail to get quote from L1");
 }
 
 struct Metrics {
@@ -180,6 +189,15 @@ pub struct Protocol<B: BlockT, Client> {
 	boot_node_ids: HashSet<PeerId>,
 	/// A cache for the data that was associated to a block announcement.
 	block_announce_data_cache: LruCache<B::Hash, Vec<u8>>,
+
+	/// Layer1 Address where Tenet contract deployed
+	pub layer1_addr: String,
+	/// Network account for registrying TEE info
+	pub network_private_key: String,
+	/// Address of Tenet contract
+	pub tenet_service_contract_addr: String,
+	/// ABI JSON file of Tenet contract
+	pub tenet_service_contract_abi_json: Vec<u8>,
 }
 
 /// Peer information
@@ -364,6 +382,10 @@ where
 			},
 			boot_node_ids,
 			block_announce_data_cache,
+			layer1_addr: network_config.layer1_addr.clone(),
+			network_private_key: network_config.network_private_key.clone(),
+			tenet_service_contract_addr: network_config.tenet_service_contract_addr.clone(),
+			tenet_service_contract_abi_json: network_config.tenet_service_contract_abi_json.clone(),
 		};
 
 		Ok((protocol, peerset_handle, known_addresses))
@@ -577,6 +599,77 @@ where
 			debug!(target: "sync", "Too many light nodes, rejecting {}", who);
 			self.behaviour.disconnect_peer(&who, HARDCODED_PEERSETS_SYNC);
 			return Err(())
+		}
+
+		// query quote from L1
+		let mut quote_size: u32 = 0;
+		let mut quote_buf: Vec<u8> = vec![0; quote_size as usize];
+		let succ = futures::executor::block_on(async {
+			let transport: Result<Http, web3::Error> = Http::new(self.layer1_addr.as_str());
+			let transport = match transport {
+				Ok(transport) => transport,
+				Err(error) => {
+					log::error!("P2P verify peer error: failed to connect to layer1: {}", error);
+					return false;
+				},
+			};
+			let web3 = Web3::new(transport);
+			let contract_address = self.tenet_service_contract_addr.parse();
+			let contract_address = match contract_address {
+				Ok(contract_address) => contract_address,
+				Err(error) => {
+					log::error!("P2P verify peer error: failed to parse contract address: {}", error);
+					return false;
+				},
+			};
+			let contract = Contract::from_json(web3.eth(), contract_address, &*self.tenet_service_contract_abi_json);
+			let contract = match contract {
+				Ok(contract) => contract,
+				Err(error) => {
+					log::error!("P2P verify peer error: failed to init contract object: {}", error);
+					return false;
+				},
+			};
+			let mut peer_id_str = format!("{:?}", who);
+			peer_id_str = peer_id_str[peer_id_str.len()-54..peer_id_str.len()-2].to_string();
+			let result = contract.query("getQuote", (peer_id_str, ), None, Options::default(), None).await;
+			(quote_size, quote_buf)  = match result {
+				Ok(result) => result,
+				Err(error) => {
+					log::error!("P2P verify peer error: failed to query teeRegList: {}", error);
+					return false;
+				},
+				};
+			return true;
+		});
+		if !succ {
+			self.peerset_handle.report_peer(who, rep::BAD_TEE_QUOTE);
+			self.behaviour.disconnect_peer(&who, HARDCODED_PEERSETS_SYNC);
+			return Err(())
+		}
+		let suppl_size: u32 = 0;
+		let mut suppl_buf: Vec<u8> = vec![0; suppl_size as usize];
+
+		// verify quote
+		let mut quote_verification_result = sgx_ql_qv_result_t::SGX_QL_QV_RESULT_UNSPECIFIED;
+		let mut collateral_expiration_status = 1;
+		let mut verify_arg = IoctlVerDCAPQuoteArg {
+			quote_buf: quote_buf.as_mut_ptr(),
+			quote_size: quote_size,
+			collateral_expiration_status: &mut collateral_expiration_status,
+			quote_verification_result: &mut quote_verification_result,
+			supplemental_data_size: suppl_size,
+			supplemental_data: suppl_buf.as_mut_ptr(),
+		};
+		let mut dcap = DcapQuote::new();
+		let ret = dcap.verify_quote(&mut verify_arg).unwrap();
+		if ret < 0 || quote_verification_result != sgx_ql_qv_result_t::SGX_QL_QV_RESULT_OK {
+			log::error!("P2P verify peer error: DCAP verify quote failed. ret={}, quote_verification_result={}", ret, quote_verification_result);
+			self.peerset_handle.report_peer(who, rep::BAD_TEE_QUOTE);
+			self.behaviour.disconnect_peer(&who, HARDCODED_PEERSETS_SYNC);
+			return Err(())
+		} else {
+			log::info!("P2P verify peer succ: DCAP verify quote successfully");
 		}
 
 		let peer = Peer {

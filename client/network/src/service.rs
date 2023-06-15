@@ -83,11 +83,23 @@ use std::{
 	marker::PhantomData,
 	num::NonZeroUsize,
 	pin::Pin,
-	str,
+	str::{
+		self,
+		FromStr,
+	},
 	sync::{
 		atomic::{AtomicBool, AtomicUsize, Ordering},
 		Arc,
 	},
+};
+
+use occlum_dcap::*;
+use web3::{
+	Web3,
+	types::{Bytes, Address, TransactionParameters},
+	transports::Http,
+	contract::{Contract, tokens::Tokenize},
+	signing::SecretKey,
 };
 
 pub use behaviour::{InboundFailure, OutboundFailure, ResponseFailure};
@@ -140,6 +152,7 @@ pub struct NetworkService<B: BlockT + 'static, H: ExHashT> {
 	_marker: PhantomData<H>,
 }
 
+
 impl<B, H, Client> NetworkWorker<B, H, Client>
 where
 	B: BlockT + 'static,
@@ -156,6 +169,54 @@ where
 		let local_identity = params.network_config.node_key.clone().into_keypair()?;
 		let local_public = local_identity.public();
 		let local_peer_id = local_public.to_peer_id();
+
+		// quote TEE info
+		let mut public_key_str = format!("{:?}", local_public);
+		public_key_str = public_key_str[public_key_str.len()-65..public_key_str.len()-1].to_string();
+		let mut peer_id_str = format!("{:?}", local_peer_id);
+		peer_id_str = peer_id_str[peer_id_str.len()-54..peer_id_str.len()-2].to_string();
+		let mut report_map = serde_json::Map::new();
+		report_map.insert("public_key".to_string(), serde_json::Value::String(public_key_str.clone()));
+		report_map.insert("peer_id".to_string(), serde_json::Value::String(peer_id_str.clone()));
+		let report_json = serde_json::Value::Object(report_map);
+		let report_json_str = serde_json::to_string(&report_json).unwrap();
+		let report_data = report_json_str.as_str();
+		let mut dcap = DcapQuote::new();
+		let quote_size = dcap.get_quote_size();
+        let mut quote_buf: Vec<u8> = vec![0; quote_size as usize];
+		let mut req_data = sgx_report_data_t::default();
+		for (pos, val) in report_data.as_bytes().iter().enumerate() {
+            req_data.d[pos] = *val;
+        }
+		dcap.generate_quote(quote_buf.as_mut_ptr(), &mut req_data).unwrap();
+
+	    // Register TEE info to L1
+		futures::executor::block_on(async {
+			let transport = Http::new(params.network_config.layer1_addr.as_str()).unwrap();
+			let web3 = Web3::new(transport);
+			let prvk = SecretKey::from_str(params.network_config.network_private_key.as_str()).unwrap();
+			let contract_address: Address = params.network_config.tenet_service_contract_addr.parse().unwrap();
+			let contract: Contract<Http> = Contract::from_json(
+				web3.eth(),
+				contract_address,
+				&*params.network_config.tenet_service_contract_abi_json,
+			).unwrap();
+			let p2p_connect_info: String = "".to_string();
+			let tx = TransactionParameters {
+				to: Some(contract_address),
+				data: Bytes(contract.abi().function("registerTEE").unwrap().encode_input(&(
+					peer_id_str.clone(), 
+					quote_size,
+					quote_buf,
+					public_key_str, 
+					p2p_connect_info
+				).into_tokens()[..]).unwrap()),
+				gas: 6_000_000.into(),
+				..Default::default()
+			};
+			let signed = web3.accounts().sign_transaction(tx, &prvk).await.unwrap();
+			web3.eth().send_raw_transaction(signed.raw_transaction).await.unwrap();
+		});
 
 		params
 			.network_config
@@ -1726,6 +1787,68 @@ where
 				self.event_streams.send(Event::NotificationsReceived { remote, messages });
 			},
 			SwarmEvent::Behaviour(BehaviourOut::SyncConnected(remote)) => {
+				// query quote from L1
+				// let mut quote_size: u32 = 0;
+				// let mut quote_buf: Vec<u8> = vec![0; quote_size as usize];
+				// futures::executor::block_on(async {
+    			// 	let transport: Result<Http, web3::Error> = Http::new(LAYER1_ADDR);
+				// 	let transport = match transport {
+				// 		Ok(transport) => transport,
+				// 		Err(error) => {
+				// 			log::error!("P2P verify peer error: failed to connect to layer1: {}", error);
+				// 			return;
+				// 		},
+				// 	};
+    			// 	let web3 = Web3::new(transport);
+    			// 	let contract_address = TENET_SERVICE_CONTRACT_ADDR.parse();
+				// 	let contract_address = match contract_address {
+				// 		Ok(contract_address) => contract_address,
+				// 		Err(error) => {
+				// 			log::error!("P2P verify peer error: failed to parse contract address: {}", error);
+				// 			return;
+				// 		},
+				// 	};
+    			// 	let contract = Contract::from_json(web3.eth(), contract_address, TENET_SERVICE_CONTRACT_ABI_JSON);
+				// 	let contract = match contract {
+				// 		Ok(contract) => contract,
+				// 		Err(error) => {
+				// 			log::error!("P2P verify peer error: failed to init contract object: {}", error);
+				// 			return;
+				// 		},
+				// 	};
+				// 	let mut peer_id_str = format!("{:?}", remote);
+				// 	peer_id_str = peer_id_str[peer_id_str.len()-54..peer_id_str.len()-2].to_string();
+    			// 	let result = contract.query("getQuote", (peer_id_str, ), None, Options::default(), None).await;
+				// 	(quote_size, quote_buf)  = match result {
+				// 		Ok(result) => result,
+				// 		Err(error) => {
+				// 			log::error!("P2P verify peer error: failed to query teeRegList: {}", error);
+				// 			return;
+				// 		},
+				// 		};
+				// });
+				// let suppl_size: u32 = 0;
+				// let mut suppl_buf: Vec<u8> = vec![0; suppl_size as usize];
+
+				// // verify quote
+				// let mut quote_verification_result = sgx_ql_qv_result_t::SGX_QL_QV_RESULT_UNSPECIFIED;
+				// let mut status = 1;
+				// let mut verify_arg = IoctlVerDCAPQuoteArg {
+				// 	quote_buf: quote_buf.as_mut_ptr(),
+				// 	quote_size: quote_size,
+				// 	collateral_expiration_status: &mut status,
+				// 	quote_verification_result: &mut quote_verification_result,
+				// 	supplemental_data_size: suppl_size,
+				// 	supplemental_data: suppl_buf.as_mut_ptr(),
+				// };
+				// let mut dcap = DcapQuote::new();
+				// let ret = dcap.verify_quote(&mut verify_arg).unwrap();
+				// if ret < 0 || quote_verification_result != sgx_ql_qv_result_t::SGX_QL_QV_RESULT_OK {
+				// 	log::error!("P2P verify peer error: DCAP verify quote failed. ret={}, quote_verification_result={}", ret, quote_verification_result);
+				// } else {
+				// 	log::info!("P2P verify peer succ: DCAP verify quote successfully");
+				// }
+
 				self.event_streams.send(Event::SyncConnected { remote });
 			},
 			SwarmEvent::Behaviour(BehaviourOut::SyncDisconnected(remote)) => {

@@ -240,6 +240,10 @@ impl NetworkParams {
 			yamux_window_size: None,
 			ipfs_server: self.ipfs_server,
 			sync_mode: self.sync.into(),
+			layer1_addr: String::new(),
+			network_private_key: String::new(),
+			tenet_service_contract_addr: String::new(),
+			tenet_service_contract_abi_json: Vec::new(),
 		}
 	}
 }

@@ -192,6 +192,12 @@ pub fn new_full(mut config: Configuration) -> Result<TaskManager, ServiceError> 
 		Vec::default(),
 	));
 
+	// An example of tenet network config
+	config.network.layer1_addr = String::from("http://localhost:8545");
+	config.network.network_private_key = String::from("68c92902940c15c03249ec732e0301c0a30baaa82daf1fb030ef9ec44f1945fc");
+	config.network.tenet_service_contract_addr = String::from("0x7fa95D8c513C4369D02Ac4f2D6C7d07c4F5f50c9");
+	config.network.tenet_service_contract_abi_json = include_bytes!("/repo/cloak-service-contract/output/TeeRegService.json").to_vec();
+
 	let (network, system_rpc_tx, tx_handler_controller, network_starter) =
 		sc_service::build_network(sc_service::BuildNetworkParams {
 			config: &config,

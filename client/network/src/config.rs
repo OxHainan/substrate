@@ -200,6 +200,15 @@ pub struct NetworkConfiguration {
 	/// a modification of the way the implementation works. Different nodes with different
 	/// configured values remain compatible with each other.
 	pub yamux_window_size: Option<u32>,
+
+	/// Layer1 Address where Tenet contract deployed
+	pub layer1_addr: String,
+	/// Network account for registrying TEE info
+	pub network_private_key: String,
+	/// Address of Tenet contract
+	pub tenet_service_contract_addr: String,
+	/// ABI JSON file of Tenet contract
+	pub tenet_service_contract_abi_json: Vec<u8>,
 }
 
 impl NetworkConfiguration {
@@ -231,6 +240,10 @@ impl NetworkConfiguration {
 			kademlia_disjoint_query_paths: false,
 			yamux_window_size: None,
 			ipfs_server: false,
+			layer1_addr: String::new(),
+			network_private_key: String::new(),
+			tenet_service_contract_addr: String::new(),
+			tenet_service_contract_abi_json: Vec::new(),
 		}
 	}
 

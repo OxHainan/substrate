@@ -664,7 +664,7 @@ where
 		let mut dcap = DcapQuote::new();
 		let ret = dcap.verify_quote(&mut verify_arg).unwrap();
 		if ret < 0 || quote_verification_result != sgx_ql_qv_result_t::SGX_QL_QV_RESULT_OK {
-			log::error!("P2P verify peer error: DCAP verify quote failed. ret={}, quote_verification_result={}", ret, quote_verification_result);
+			log::error!("P2P verify peer error: DCAP verify quote failed. ret={}, quote_verification_result={:?}", ret, quote_verification_result);
 			self.peerset_handle.report_peer(who, rep::BAD_TEE_QUOTE);
 			self.behaviour.disconnect_peer(&who, HARDCODED_PEERSETS_SYNC);
 			return Err(())

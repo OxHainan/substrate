@@ -7,7 +7,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-sgx_types = { path = "../sgx_types" }
+sgx_types = "1.1.2"
 libc = "0.2"
 cfg-if = "1.0.0"
 

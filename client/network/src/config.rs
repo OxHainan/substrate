@@ -209,6 +209,8 @@ pub struct NetworkConfiguration {
 	pub tenet_service_contract_addr: String,
 	/// ABI JSON file of Tenet contract
 	pub tenet_service_contract_abi_json: Vec<u8>,
+	/// Need remote attestation when P2P connecting
+	pub need_remote_attestation: bool,
 }
 
 impl NetworkConfiguration {
@@ -244,6 +246,7 @@ impl NetworkConfiguration {
 			network_private_key: String::new(),
 			tenet_service_contract_addr: String::new(),
 			tenet_service_contract_abi_json: Vec::new(),
+			need_remote_attestation: false,
 		}
 	}
 

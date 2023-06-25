@@ -244,6 +244,7 @@ impl NetworkParams {
 			network_private_key: String::new(),
 			tenet_service_contract_addr: String::new(),
 			tenet_service_contract_abi_json: Vec::new(),
+			need_remote_attestation: false,
 		}
 	}
 }

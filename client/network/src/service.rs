@@ -170,70 +170,79 @@ where
 		let local_public = local_identity.public();
 		let local_peer_id = local_public.to_peer_id();
 
-		// quote TEE info
-		let mut public_key_str = format!("{:?}", local_public);
-		public_key_str = public_key_str[public_key_str.len()-65..public_key_str.len()-1].to_string();
-		let peer_id_str = local_peer_id.to_base58();
-		let mut report_map = serde_json::Map::new();
-		report_map.insert("public_key".to_string(), serde_json::Value::String(public_key_str.clone()));
-		report_map.insert("peer_id".to_string(), serde_json::Value::String(peer_id_str.clone()));
-		let report_json = serde_json::Value::Object(report_map);
-		let report_json_str = serde_json::to_string(&report_json).unwrap();
-		let report_data = report_json_str.as_str();
-		let mut dcap = DcapQuote::new();
-		let quote_size = dcap.get_quote_size();
-        let mut quote_buf: Vec<u8> = vec![0; quote_size as usize];
-		let mut req_data = sgx_report_data_t::default();
-		for (pos, val) in report_data.as_bytes().iter().enumerate() {
-            req_data.d[pos] = *val;
-        }
-		dcap.generate_quote(quote_buf.as_mut_ptr(), &mut req_data).unwrap();
+		// remote attestation registration
+		if params.network_config.need_remote_attestation {
+			// quote TEE info
+			let mut public_key_str = format!("{:?}", local_public);
+			public_key_str = public_key_str[public_key_str.len()-65..public_key_str.len()-1].to_string();
+			let peer_id_str = local_peer_id.to_base58();
+			let mut report_map = serde_json::Map::new();
+			report_map.insert("public_key".to_string(), serde_json::Value::String(public_key_str.clone()));
+			report_map.insert("peer_id".to_string(), serde_json::Value::String(peer_id_str.clone()));
+			let report_json = serde_json::Value::Object(report_map);
+			let report_json_str = serde_json::to_string(&report_json).unwrap();
+			let report_data = report_json_str.as_str();
+			let mut dcap = DcapQuote::new();
+			let quote_size = dcap.get_quote_size();
+        	let mut quote_buf: Vec<u8> = vec![0; quote_size as usize];
+			let sup_size = dcap.get_supplemental_data_size();
+			let mut sup_buf: Vec<u8> = vec![0; sup_size as usize];
+			let mut req_data = sgx_report_data_t::default();
+			// for (pos, val) in report_data.as_bytes().iter().enumerate() {
+        	//     req_data.d[pos] = *val;
+        	// }
+			dcap.generate_quote(quote_buf.as_mut_ptr(), &mut req_data).unwrap();
 
-	    // Register TEE info to L1
-		futures::executor::block_on(async {
-			// Check if exist. If yes, skip.
-			let transport = Http::new(params.network_config.layer1_addr.as_str()).unwrap();
-			let web3 = Web3::new(transport);
-			let prvk = SecretKey::from_str(params.network_config.network_private_key.as_str()).unwrap();
-			let contract_address: Address = params.network_config.tenet_service_contract_addr.parse().unwrap();
-			let contract: Contract<Http> = Contract::from_json(
-				web3.eth(),
-				contract_address,
-				&*params.network_config.tenet_service_contract_abi_json,
-			).unwrap();
-			let result_size: u32;
-			let result_buf: Vec<u8>;
-			let result = contract.query("getQuote", (peer_id_str.clone(), ), None, Options::default(), None).await;
-			(result_size, result_buf)  = match result {
-				Ok(result) => result,
-				Err(error) => {
-					log::error!("TEE register failed: failed to query teeRegList: {}", error);
-					panic!("TEE register failed: failed to query teeRegList: {}", error);
-				},
-			};
-			if result_size != 0 {
-				log::info!("Register already. Skip. PeerId:{}", peer_id_str.clone());
-				return;
-			}
+	    	// Register TEE info to L1
+			futures::executor::block_on(async {
+				// Check if exist. If yes, skip.
+				let transport = Http::new(params.network_config.layer1_addr.as_str()).unwrap();
+				let web3 = Web3::new(transport);
+				let prvk = SecretKey::from_str(params.network_config.network_private_key.as_str()).unwrap();
+				let contract_address: Address = params.network_config.tenet_service_contract_addr.parse().unwrap();
+				let contract: Contract<Http> = Contract::from_json(
+					web3.eth(),
+					contract_address,
+					&*params.network_config.tenet_service_contract_abi_json,
+				).unwrap();
+				let result_quote_size: u32;
+				let result_quote_buf: Vec<u8>;
+				let result_sup_size: u32;
+				let result_sup_buf: Vec<u8>;
+				let result = contract.query("getQuote", (peer_id_str.clone(), ), None, Options::default(), None).await;
+				(result_quote_size, result_quote_buf, result_sup_size, result_sup_buf)  = match result {
+					Ok(result) => result,
+					Err(error) => {
+						log::error!("TEE register failed: failed to query teeRegList: {}", error);
+						panic!("TEE register failed: failed to query teeRegList: {}", error);
+					},
+				};
+				if result_quote_size != 0 {
+					log::info!("Register already. Skip. PeerId:{}", peer_id_str.clone());
+					return;
+				}
 
-			// register
-			let p2p_connect_info: String = "".to_string();
-			let tx = TransactionParameters {
-				to: Some(contract_address),
-				data: Bytes(contract.abi().function("registerTEE").unwrap().encode_input(&(
-					peer_id_str.clone(), 
-					quote_size,
-					quote_buf,
-					public_key_str, 
-					p2p_connect_info
-				).into_tokens()[..]).unwrap()),
-				gas: 6_000_000.into(),
-				..Default::default()
-			};
-			let signed = web3.accounts().sign_transaction(tx, &prvk).await.unwrap();
-			web3.eth().send_raw_transaction(signed.raw_transaction).await.unwrap();
-			log::info!("Registered to L1 successfully. PeerId:{}", peer_id_str.clone());
-		});
+				// register
+				let p2p_connect_info: String = "".to_string();
+				let tx = TransactionParameters {
+					to: Some(contract_address),
+					data: Bytes(contract.abi().function("registerTEE").unwrap().encode_input(&(
+						peer_id_str.clone(), 
+						quote_size,
+						quote_buf.clone(),
+						sup_size,
+						sup_buf.clone(),
+						public_key_str, 
+						p2p_connect_info
+					).into_tokens()[..]).unwrap()),
+					gas: 6_000_000.into(),
+					..Default::default()
+				};
+				let signed = web3.accounts().sign_transaction(tx, &prvk).await.unwrap();
+				web3.eth().send_raw_transaction(signed.raw_transaction).await.unwrap();
+				log::info!("Registered to L1 successfully. PeerId:{}", peer_id_str.clone());
+			});
+		}
 
 		params
 			.network_config

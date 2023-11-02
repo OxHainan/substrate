@@ -43,7 +43,7 @@ use std::{
 use finality_grandpa::{
 	voter,
 	voter_set::VoterSet,
-	Message::{Precommit, Prevote, PrimaryPropose},
+	Message::{Precommit, PrimaryPropose},
 };
 use parity_scale_codec::{Decode, Encode};
 use sc_network::ReputationChange;
@@ -369,16 +369,7 @@ impl<B: BlockT, N: Network<B>> NetworkBridge<B, N> {
 										"target_hash" => ?propose.target_hash,
 									);
 								},
-								Prevote(prevote) => {
-									telemetry!(
-										telemetry;
-										CONSENSUS_INFO;
-										"afg.received_prevote";
-										"voter" => ?format!("{}", msg.message.id),
-										"target_number" => ?prevote.target_number,
-										"target_hash" => ?prevote.target_hash,
-									);
-								},
+
 								Precommit(precommit) => {
 									telemetry!(
 										telemetry;
@@ -724,11 +715,7 @@ impl<Block: BlockT> Sink<Message<Block::Header>> for OutgoingMessages<Block> {
 					*vote = propose.clone();
 				}
 			},
-			finality_grandpa::Message::Prevote(ref mut vote) => {
-				if let Some(prevote) = self.has_voted.prevote() {
-					*vote = prevote.clone();
-				}
-			},
+
 			finality_grandpa::Message::Precommit(ref mut vote) => {
 				if let Some(precommit) = self.has_voted.precommit() {
 					*vote = precommit.clone();
@@ -913,8 +900,6 @@ fn check_catch_up<Block: BlockT>(
 		Ok(())
 	}
 
-	check_weight(voters, msg.prevotes.iter().map(|vote| &vote.id), full_threshold)?;
-
 	check_weight(voters, msg.precommits.iter().map(|vote| &vote.id), full_threshold)?;
 
 	fn check_signatures<'a, B, I>(
@@ -959,18 +944,6 @@ fn check_catch_up<Block: BlockT>(
 
 	let mut buf = Vec::new();
 
-	// check signatures on all contained prevotes.
-	let signatures_checked = check_signatures::<Block, _>(
-		msg.prevotes.iter().map(|vote| {
-			(finality_grandpa::Message::Prevote(vote.prevote.clone()), &vote.id, &vote.signature)
-		}),
-		msg.round_number,
-		set_id.0,
-		0,
-		&mut buf,
-		telemetry.clone(),
-	)?;
-
 	// check signatures on all contained precommits.
 	let _ = check_signatures::<Block, _>(
 		msg.precommits.iter().map(|vote| {
@@ -982,7 +955,7 @@ fn check_catch_up<Block: BlockT>(
 		}),
 		msg.round_number,
 		set_id.0,
-		signatures_checked,
+		0,
 		&mut buf,
 		telemetry,
 	)?;

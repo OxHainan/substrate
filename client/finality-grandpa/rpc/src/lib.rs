@@ -213,14 +213,9 @@ mod tests {
 
 	impl ReportVoterState for TestVoterState {
 		fn get(&self) -> Option<report::VoterState<AuthorityId>> {
-			let voter_id_1 = AuthorityId::from_slice(&[1; 32]).unwrap();
-			let voters_best: HashSet<_> = vec![voter_id_1].into_iter().collect();
-
 			let best_round_state = sc_finality_grandpa::report::RoundState {
 				total_weight: 100_u64.try_into().unwrap(),
 				threshold_weight: 67_u64.try_into().unwrap(),
-				prevote_current_weight: 50.into(),
-				prevote_ids: voters_best,
 				precommit_current_weight: 0.into(),
 				precommit_ids: HashSet::new(),
 			};
@@ -228,8 +223,6 @@ mod tests {
 			let past_round_state = sc_finality_grandpa::report::RoundState {
 				total_weight: 100_u64.try_into().unwrap(),
 				threshold_weight: 67_u64.try_into().unwrap(),
-				prevote_current_weight: 100.into(),
-				prevote_ids: voters(),
 				precommit_current_weight: 100.into(),
 				precommit_ids: voters(),
 			};
@@ -295,12 +288,10 @@ mod tests {
 			\"setId\":1,\
 			\"best\":{\
 				\"round\":2,\"totalWeight\":100,\"thresholdWeight\":67,\
-				\"prevotes\":{\"currentWeight\":50,\"missing\":[\"5C7LYpP2ZH3tpKbvVvwiVe54AapxErdPBbvkYhe6y9ZBkqWt\"]},\
 				\"precommits\":{\"currentWeight\":0,\"missing\":[\"5C62Ck4UrFPiBtoCmeSrgF7x9yv9mn38446dhCpsi2mLHiFT\",\"5C7LYpP2ZH3tpKbvVvwiVe54AapxErdPBbvkYhe6y9ZBkqWt\"]}\
 			},\
 				\"background\":[{\
 				\"round\":1,\"totalWeight\":100,\"thresholdWeight\":67,\
-				\"prevotes\":{\"currentWeight\":100,\"missing\":[]},\
 				\"precommits\":{\"currentWeight\":100,\"missing\":[]}\
 			}]\
 		},\"id\":0}".to_string();

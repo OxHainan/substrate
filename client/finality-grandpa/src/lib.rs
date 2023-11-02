@@ -148,7 +148,7 @@ use until_imported::UntilGlobalMessageBlocksImported;
 // Re-export these two because it's just so damn convenient.
 pub use sp_finality_grandpa::{
 	AuthorityId, AuthorityPair, CatchUp, Commit, CompactCommit, GrandpaApi, Message, Precommit,
-	Prevote, PrimaryPropose, ScheduledChange, SignedMessage,
+	PrimaryPropose, ScheduledChange, SignedMessage,
 };
 use std::marker::PhantomData;
 

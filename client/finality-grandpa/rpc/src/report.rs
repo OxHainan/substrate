@@ -59,13 +59,6 @@ impl ReportVoterState for SharedVoterState {
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct Prevotes {
-	current_weight: u32,
-	missing: BTreeSet<AuthorityId>,
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 struct Precommits {
 	current_weight: u32,
 	missing: BTreeSet<AuthorityId>,
@@ -77,7 +70,6 @@ struct RoundState {
 	round: u32,
 	total_weight: u32,
 	threshold_weight: u32,
-	prevotes: Prevotes,
 	precommits: Precommits,
 }
 
@@ -87,9 +79,6 @@ impl RoundState {
 		round_state: &report::RoundState<AuthorityId>,
 		voters: &HashSet<AuthorityId>,
 	) -> Result<Self, Error> {
-		let prevotes = &round_state.prevote_ids;
-		let missing_prevotes = voters.difference(prevotes).cloned().collect();
-
 		let precommits = &round_state.precommit_ids;
 		let missing_precommits = voters.difference(precommits).cloned().collect();
 
@@ -97,10 +86,6 @@ impl RoundState {
 			round: round.try_into()?,
 			total_weight: round_state.total_weight.get().try_into()?,
 			threshold_weight: round_state.threshold_weight.get().try_into()?,
-			prevotes: Prevotes {
-				current_weight: round_state.prevote_current_weight.0.try_into()?,
-				missing: missing_prevotes,
-			},
 			precommits: Precommits {
 				current_weight: round_state.precommit_current_weight.0.try_into()?,
 				missing: missing_precommits,

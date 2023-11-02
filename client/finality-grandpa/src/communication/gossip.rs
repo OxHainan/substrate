@@ -1010,7 +1010,7 @@ impl<Block: BlockT> Inner<Block> {
 					return Action::Discard(cost::MALFORMED_CATCH_UP)
 				}
 
-				if full.message.prevotes.is_empty() || full.message.precommits.is_empty() {
+				if full.message.precommits.is_empty() {
 					return Action::Discard(cost::MALFORMED_CATCH_UP)
 				}
 
@@ -1084,7 +1084,6 @@ impl<Block: BlockT> Inner<Block> {
 			last_completed_round.number,
 		);
 
-		let mut prevotes = Vec::new();
 		let mut precommits = Vec::new();
 
 		// NOTE: the set of votes stored in `LastCompletedRound` is a minimal
@@ -1094,13 +1093,6 @@ impl<Block: BlockT> Inner<Block> {
 		// too many equivocations (we exceed the fault-tolerance bound).
 		for vote in last_completed_round.votes {
 			match vote.message {
-				finality_grandpa::Message::Prevote(prevote) => {
-					prevotes.push(finality_grandpa::SignedPrevote {
-						prevote,
-						signature: vote.signature,
-						id: vote.id,
-					});
-				},
 				finality_grandpa::Message::Precommit(precommit) => {
 					precommits.push(finality_grandpa::SignedPrecommit {
 						precommit,
@@ -1116,7 +1108,7 @@ impl<Block: BlockT> Inner<Block> {
 
 		let catch_up = CatchUp::<Block::Header> {
 			round_number: last_completed_round.number,
-			prevotes,
+			// prevotes,
 			precommits,
 			base_hash,
 			base_number,
@@ -1933,7 +1925,7 @@ mod tests {
 				round: Round(1),
 				set_id: SetId(set_id),
 				message: SignedMessage::<Header> {
-					message: finality_grandpa::Message::Prevote(finality_grandpa::Prevote {
+					message: finality_grandpa::Message::Precommit(finality_grandpa::Precommit {
 						target_hash: Default::default(),
 						target_number: 10,
 					}),
@@ -1949,7 +1941,7 @@ mod tests {
 				round: Round(1),
 				set_id: SetId(set_id),
 				message: SignedMessage::<Header> {
-					message: finality_grandpa::Message::Prevote(finality_grandpa::Prevote {
+					message: finality_grandpa::Message::Precommit(finality_grandpa::Precommit {
 						target_hash: Default::default(),
 						target_number: 10,
 					}),
@@ -1982,7 +1974,6 @@ mod tests {
 					set_id: SetId(set_id),
 					message: finality_grandpa::CatchUp {
 						round_number: 10,
-						prevotes: Default::default(),
 						precommits: Default::default(),
 						base_hash: Default::default(),
 						base_number: Default::default(),

@@ -56,7 +56,7 @@ use crate::{
 	notification::GrandpaJustificationSender,
 	until_imported::UntilVoteTargetImported,
 	voting_rule::VotingRule as VotingRuleT,
-	ClientForGrandpa, CommandOrError, Commit, Config, Error, NewAuthoritySet, Precommit, Prevote,
+	ClientForGrandpa, CommandOrError, Commit, Config, Error, NewAuthoritySet, Precommit,
 	PrimaryPropose, SignedMessage, VoterCommand, LOG_TARGET,
 };
 
@@ -267,10 +267,8 @@ pub enum HasVoted<Header: HeaderT> {
 pub enum Vote<Header: HeaderT> {
 	/// Has cast a proposal.
 	Propose(PrimaryPropose<Header>),
-	/// Has cast a prevote.
-	Prevote(Option<PrimaryPropose<Header>>, Prevote<Header>),
 	/// Has cast a precommit (implies prevote.)
-	Precommit(Option<PrimaryPropose<Header>>, Prevote<Header>, Precommit<Header>),
+	Precommit(Option<PrimaryPropose<Header>>, Precommit<Header>),
 }
 
 impl<Header: HeaderT> HasVoted<Header> {
@@ -278,17 +276,7 @@ impl<Header: HeaderT> HasVoted<Header> {
 	pub fn propose(&self) -> Option<&PrimaryPropose<Header>> {
 		match self {
 			HasVoted::Yes(_, Vote::Propose(propose)) => Some(propose),
-			HasVoted::Yes(_, Vote::Prevote(propose, _)) |
-			HasVoted::Yes(_, Vote::Precommit(propose, _, _)) => propose.as_ref(),
-			_ => None,
-		}
-	}
-
-	/// Returns the prevote we should vote with (if any.)
-	pub fn prevote(&self) -> Option<&Prevote<Header>> {
-		match self {
-			HasVoted::Yes(_, Vote::Prevote(_, prevote)) |
-			HasVoted::Yes(_, Vote::Precommit(_, prevote, _)) => Some(prevote),
+			HasVoted::Yes(_, Vote::Precommit(propose, _)) => propose.as_ref(),
 			_ => None,
 		}
 	}
@@ -296,7 +284,7 @@ impl<Header: HeaderT> HasVoted<Header> {
 	/// Returns the precommit we should vote with (if any.)
 	pub fn precommit(&self) -> Option<&Precommit<Header>> {
 		match self {
-			HasVoted::Yes(_, Vote::Precommit(_, _, precommit)) => Some(precommit),
+			HasVoted::Yes(_, Vote::Precommit(_, precommit)) => Some(precommit),
 			_ => None,
 		}
 	}
@@ -304,11 +292,6 @@ impl<Header: HeaderT> HasVoted<Header> {
 	/// Returns true if the voter can still propose, false otherwise.
 	pub fn can_propose(&self) -> bool {
 		self.propose().is_none()
-	}
-
-	/// Returns true if the voter can still prevote, false otherwise.
-	pub fn can_prevote(&self) -> bool {
-		self.prevote().is_none()
 	}
 
 	/// Returns true if the voter can still precommit, false otherwise.
@@ -391,7 +374,6 @@ impl<Block: BlockT> SharedVoterSetState<Block> {
 #[derive(Clone)]
 pub(crate) struct Metrics {
 	finality_grandpa_round: Gauge<U64>,
-	finality_grandpa_prevotes: Counter<U64>,
 	finality_grandpa_precommits: Counter<U64>,
 }
 
@@ -404,13 +386,7 @@ impl Metrics {
 				Gauge::new("substrate_finality_grandpa_round", "Highest completed GRANDPA round.")?,
 				registry,
 			)?,
-			finality_grandpa_prevotes: register(
-				Counter::new(
-					"substrate_finality_grandpa_prevotes_total",
-					"Total number of GRANDPA prevotes cast locally.",
-				)?,
-				registry,
-			)?,
+
 			finality_grandpa_precommits: register(
 				Counter::new(
 					"substrate_finality_grandpa_precommits_total",
@@ -706,8 +682,7 @@ where
 		&self,
 		round: RoundNumber,
 	) -> voter::RoundData<Self::Id, Self::Timer, Self::In, Self::Out> {
-		let prevote_timer = Delay::new(self.config.gossip_duration * 2);
-		let precommit_timer = Delay::new(self.config.gossip_duration * 4);
+		let precommit_timer = Delay::new(self.config.gossip_duration * 2);
 
 		let local_id = local_authority_id(&self.voters, self.config.keystore.as_ref());
 
@@ -766,7 +741,6 @@ where
 
 		voter::RoundData {
 			voter_id: local_id,
-			prevote_timer: Box::pin(prevote_timer.map(Ok)),
 			precommit_timer: Box::pin(precommit_timer.map(Ok)),
 			incoming,
 			outgoing,
@@ -802,69 +776,6 @@ where
 				.expect("checked previously that key exists; qed.");
 
 			*current_round = HasVoted::Yes(local_id, Vote::Propose(propose));
-
-			let set_state = VoterSetState::<Block>::Live {
-				completed_rounds: completed_rounds.clone(),
-				current_rounds,
-			};
-
-			crate::aux_schema::write_voter_set_state(&*self.client, &set_state)?;
-
-			Ok(Some(set_state))
-		})?;
-
-		Ok(())
-	}
-
-	fn prevoted(
-		&self,
-		round: RoundNumber,
-		prevote: Prevote<Block::Header>,
-	) -> Result<(), Self::Error> {
-		let local_id = match self.voter_set_state.voting_on(round) {
-			Some(id) => id,
-			None => return Ok(()),
-		};
-
-		let report_prevote_metrics = |prevote: &Prevote<Block::Header>| {
-			telemetry!(
-				self.telemetry;
-				CONSENSUS_DEBUG;
-				"afg.prevote_issued";
-				"round" => round,
-				"target_number" => ?prevote.target_number,
-				"target_hash" => ?prevote.target_hash,
-			);
-
-			if let Some(metrics) = self.metrics.as_ref() {
-				metrics.finality_grandpa_prevotes.inc();
-			}
-		};
-
-		self.update_voter_set_state(|voter_set_state| {
-			let (completed_rounds, current_rounds) = voter_set_state.with_current_round(round)?;
-			let current_round = current_rounds
-				.get(&round)
-				.expect("checked in with_current_round that key exists; qed.");
-
-			if !current_round.can_prevote() {
-				// we've already prevoted in this round (in a previous run),
-				// ignore the given vote and don't update the voter set
-				// state
-				return Ok(None)
-			}
-
-			// report to telemetry and prometheus
-			report_prevote_metrics(&prevote);
-
-			let propose = current_round.propose();
-
-			let mut current_rounds = current_rounds.clone();
-			let current_round = current_rounds
-				.get_mut(&round)
-				.expect("checked previously that key exists; qed.");
-
-			*current_round = HasVoted::Yes(local_id, Vote::Prevote(propose.cloned(), prevote));
 
 			let set_state = VoterSetState::<Block>::Live {
 				completed_rounds: completed_rounds.clone(),
@@ -921,23 +832,13 @@ where
 			report_precommit_metrics(&precommit);
 
 			let propose = current_round.propose();
-			let prevote = match current_round {
-				HasVoted::Yes(_, Vote::Prevote(_, prevote)) => prevote,
-				_ => {
-					let msg = "Voter precommitting before prevoting.";
-					return Err(Error::Safety(msg.to_string()))
-				},
-			};
 
 			let mut current_rounds = current_rounds.clone();
 			let current_round = current_rounds
 				.get_mut(&round)
 				.expect("checked previously that key exists; qed.");
 
-			*current_round = HasVoted::Yes(
-				local_id,
-				Vote::Precommit(propose.cloned(), prevote.clone(), precommit),
-			);
+			*current_round = HasVoted::Yes(local_id, Vote::Precommit(propose.cloned(), precommit));
 
 			let set_state = VoterSetState::<Block>::Live {
 				completed_rounds: completed_rounds.clone(),
@@ -1098,24 +999,6 @@ where
 		let delay: u64 =
 			thread_rng().gen_range(0..2 * self.config.gossip_duration.as_millis() as u64);
 		Box::pin(Delay::new(Duration::from_millis(delay)).map(Ok))
-	}
-
-	fn prevote_equivocation(
-		&self,
-		_round: RoundNumber,
-		equivocation: finality_grandpa::Equivocation<
-			Self::Id,
-			Prevote<Block::Header>,
-			Self::Signature,
-		>,
-	) {
-		warn!(
-			target: LOG_TARGET,
-			"Detected prevote equivocation in the finality worker: {:?}", equivocation
-		);
-		if let Err(err) = self.report_equivocation(equivocation.into()) {
-			warn!(target: LOG_TARGET, "Error reporting prevote equivocation: {}", err);
-		}
 	}
 
 	fn precommit_equivocation(

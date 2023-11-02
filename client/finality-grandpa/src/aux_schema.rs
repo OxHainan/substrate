@@ -187,7 +187,7 @@ where
 
 		let set_id = new_set.set_id;
 
-		let base = last_round_state.prevote_ghost.expect(
+		let base = last_round_state.precommit_ghost.expect(
 			"state is for completed round; completed rounds must have a prevote ghost; qed.",
 		);
 
@@ -244,7 +244,7 @@ where
 			SET_STATE_KEY,
 		)? {
 			Some(V1VoterSetState::Paused(last_round_number, set_state)) => {
-				let base = set_state.prevote_ghost
+				let base = set_state.precommit_ghost
 					.expect("state is for completed round; completed rounds must have a prevote ghost; qed.");
 
 				VoterSetState::Paused {
@@ -252,7 +252,7 @@ where
 				}
 			},
 			Some(V1VoterSetState::Live(last_round_number, set_state)) => {
-				let base = set_state.prevote_ghost
+				let base = set_state.precommit_ghost
 					.expect("state is for completed round; completed rounds must have a prevote ghost; qed.");
 
 				let mut current_rounds = CurrentRounds::<Block>::new();
@@ -265,7 +265,7 @@ where
 			},
 			None => {
 				let set_state = genesis_round();
-				let base = set_state.prevote_ghost
+				let base = set_state.precommit_ghost
 					.expect("state is for completed round; completed rounds must have a prevote ghost; qed.");
 
 				VoterSetState::live(set_id, &set, base)
@@ -300,7 +300,7 @@ where
 			Some(state) => state,
 			None => {
 				let state = genesis_round();
-				let base = state.prevote_ghost
+				let base = state.precommit_ghost
 					.expect("state is for completed round; completed rounds must have a prevote ghost; qed.");
 
 				VoterSetState::live(new_set.set_id, &new_set, base)
@@ -369,7 +369,7 @@ where
 						Some(state) => state,
 						None => {
 							let state = make_genesis_round();
-							let base = state.prevote_ghost
+							let base = state.precommit_ghost
 							.expect("state is for completed round; completed rounds must have a prevote ghost; qed.");
 
 							VoterSetState::live(set.set_id, &set, base)
@@ -395,7 +395,7 @@ where
 		.expect("genesis authorities is non-empty; all weights are non-zero; qed.");
 	let state = make_genesis_round();
 	let base = state
-		.prevote_ghost
+		.precommit_ghost
 		.expect("state is for completed round; completed rounds must have a prevote ghost; qed.");
 
 	let genesis_state = VoterSetState::live(0, &genesis_set, base);
@@ -517,7 +517,7 @@ mod test {
 		let set_id = 3;
 		let round_number: RoundNumber = 42;
 		let round_state = RoundState::<H256, u64> {
-			prevote_ghost: Some((H256::random(), 32)),
+			precommit_ghost: Some((H256::random(), 32)),
 			finalized: None,
 			estimate: None,
 			completable: false,
@@ -587,7 +587,7 @@ mod test {
 					CompletedRound {
 						number: round_number,
 						state: round_state.clone(),
-						base: round_state.prevote_ghost.unwrap(),
+						base: round_state.precommit_ghost.unwrap(),
 						votes: vec![],
 					},
 					set_id,
@@ -606,7 +606,7 @@ mod test {
 		let set_id = 3;
 		let round_number: RoundNumber = 42;
 		let round_state = RoundState::<H256, u64> {
-			prevote_ghost: Some((H256::random(), 32)),
+			precommit_ghost: Some((H256::random(), 32)),
 			finalized: None,
 			estimate: None,
 			completable: false,
@@ -680,7 +680,7 @@ mod test {
 					CompletedRound {
 						number: round_number,
 						state: round_state.clone(),
-						base: round_state.prevote_ghost.unwrap(),
+						base: round_state.precommit_ghost.unwrap(),
 						votes: vec![],
 					},
 					set_id,
@@ -768,7 +768,7 @@ mod test {
 		let completed_round = CompletedRound::<substrate_test_runtime_client::runtime::Block> {
 			number: 42,
 			state: round_state.clone(),
-			base: round_state.prevote_ghost.unwrap(),
+			base: round_state.precommit_ghost.unwrap(),
 			votes: vec![],
 		};
 

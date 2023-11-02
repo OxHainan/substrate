@@ -1126,16 +1126,6 @@ async fn voter_persists_its_votes() {
 
 			async move {
 				if state.compare_exchange(0, 1, Ordering::SeqCst, Ordering::SeqCst).unwrap() == 0 {
-					// the first message we receive should be a prevote from alice.
-					let prevote = match signed.message {
-						finality_grandpa::Message::Prevote(prevote) => prevote,
-						_ => panic!("voter should prevote."),
-					};
-
-					// its chain has 20 blocks and the voter targets 3/4 of the
-					// unfinalized chain, so the vote should be for block 15
-					assert_eq!(prevote.target_number, 15);
-
 					// we push 20 more blocks to alice's chain
 					net.lock().peer(0).push_blocks(20, false);
 
@@ -1162,27 +1152,29 @@ async fn voter_persists_its_votes() {
 					tokio::spawn(alice_voter2(peers, net.clone()));
 
 					// and we push our own prevote for block 30
-					let prevote =
-						finality_grandpa::Prevote { target_number: 30, target_hash: block_30_hash };
+					let precommit = finality_grandpa::Precommit {
+						target_number: 30,
+						target_hash: block_30_hash,
+					};
 
 					// One should either be calling `Sink::send` or `Sink::start_send` followed
 					// by `Sink::poll_complete` to make sure items are being flushed. Given that
 					// we send in a loop including a delay until items are received, this can be
 					// ignored for the sake of reduced complexity.
 					Pin::new(&mut *round_tx.lock())
-						.start_send(finality_grandpa::Message::Prevote(prevote))
+						.start_send(finality_grandpa::Message::Precommit(precommit))
 						.unwrap();
 				} else if state.compare_exchange(1, 2, Ordering::SeqCst, Ordering::SeqCst).unwrap() ==
 					1
 				{
 					// the next message we receive should be our own prevote
-					let prevote = match signed.message {
-						finality_grandpa::Message::Prevote(prevote) => prevote,
+					let precommit = match signed.message {
+						finality_grandpa::Message::Precommit(prevote) => prevote,
 						_ => panic!("We should receive our own prevote."),
 					};
 
 					// targeting block 30
-					assert!(prevote.target_number == 30);
+					assert!(precommit.target_number == 30);
 
 				// after alice restarts it should send its previous prevote
 				// therefore we won't ever receive it again since it will be a
@@ -1516,7 +1508,7 @@ async fn grandpa_environment_respects_voting_rules() {
 			.unwrap()
 			.unwrap()
 			.1,
-		19,
+		21,
 	);
 
 	// we finalize block 21 with block 21 being the best block
@@ -1751,16 +1743,18 @@ async fn grandpa_environment_never_overwrites_round_voter_state() {
 
 	let info = peer.client().info();
 
-	let prevote =
-		finality_grandpa::Prevote { target_hash: info.best_hash, target_number: info.best_number };
+	let precommit = finality_grandpa::Precommit {
+		target_hash: info.best_hash,
+		target_number: info.best_number,
+	};
 
 	// we prevote for round 2 which should lead to us updating the voter state
-	environment.prevoted(2, prevote.clone()).unwrap();
+	environment.precommitted(2, precommit.clone()).unwrap();
 
 	let has_voted = get_current_round(2).unwrap();
 
 	assert_matches!(has_voted, HasVoted::Yes(_, _));
-	assert_eq!(*has_voted.prevote().unwrap(), prevote);
+	assert_eq!(*has_voted.precommit().unwrap(), precommit);
 
 	// if we report round 1 as completed again we should not overwrite the
 	// voter state for round 2
@@ -1926,18 +1920,19 @@ async fn grandpa_environment_doesnt_send_equivocation_reports_for_itself() {
 		test_environment(&link, Some(keystore), network_service.clone(), ())
 	};
 
-	let signed_prevote = {
-		let prevote = finality_grandpa::Prevote { target_hash: H256::random(), target_number: 1 };
+	let signed_precommit = {
+		let precommit =
+			finality_grandpa::Precommit { target_hash: H256::random(), target_number: 1 };
 
 		let signed = alice.sign(&[]).into();
-		(prevote, signed)
+		(precommit, signed)
 	};
 
 	let mut equivocation = finality_grandpa::Equivocation {
 		round_number: 1,
 		identity: alice.public().into(),
-		first: signed_prevote.clone(),
-		second: signed_prevote.clone(),
+		first: signed_precommit.clone(),
+		second: signed_precommit.clone(),
 	};
 
 	// we need to call `round_data` to pick up from the keystore which
@@ -1946,13 +1941,13 @@ async fn grandpa_environment_doesnt_send_equivocation_reports_for_itself() {
 
 	// reporting the equivocation should fail since the offender is a local
 	// authority (i.e. we have keys in our keystore for the given id)
-	let equivocation_proof = sp_finality_grandpa::Equivocation::Prevote(equivocation.clone());
+	let equivocation_proof = sp_finality_grandpa::Equivocation::Precommit(equivocation.clone());
 	assert!(matches!(environment.report_equivocation(equivocation_proof), Err(Error::Safety(_))));
 
 	// if we set the equivocation offender to another id for which we don't have
 	// keys it should work
 	equivocation.identity = TryFrom::try_from(&[1; 32][..]).unwrap();
-	let equivocation_proof = sp_finality_grandpa::Equivocation::Prevote(equivocation);
+	let equivocation_proof = sp_finality_grandpa::Equivocation::Precommit(equivocation);
 	assert!(environment.report_equivocation(equivocation_proof).is_ok());
 }
 

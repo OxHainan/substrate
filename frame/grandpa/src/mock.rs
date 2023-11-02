@@ -355,25 +355,25 @@ pub fn generate_equivocation_proof(
 	vote1: (RoundNumber, H256, u64, &Ed25519Keyring),
 	vote2: (RoundNumber, H256, u64, &Ed25519Keyring),
 ) -> sp_finality_grandpa::EquivocationProof<H256, u64> {
-	let signed_prevote = |round, hash, number, keyring: &Ed25519Keyring| {
-		let prevote = finality_grandpa::Prevote { target_hash: hash, target_number: number };
+	let signed_precommit = |round, hash, number, keyring: &Ed25519Keyring| {
+		let precommit = finality_grandpa::Precommit { target_hash: hash, target_number: number };
 
-		let prevote_msg = finality_grandpa::Message::Prevote(prevote.clone());
-		let payload = sp_finality_grandpa::localized_payload(round, set_id, &prevote_msg);
+		let precommit_msg = finality_grandpa::Message::Precommit(precommit.clone());
+		let payload = sp_finality_grandpa::localized_payload(round, set_id, &precommit_msg);
 		let signed = keyring.sign(&payload).into();
-		(prevote, signed)
+		(precommit, signed)
 	};
 
-	let (prevote1, signed1) = signed_prevote(vote1.0, vote1.1, vote1.2, vote1.3);
-	let (prevote2, signed2) = signed_prevote(vote2.0, vote2.1, vote2.2, vote2.3);
+	let (precommit1, signed1) = signed_precommit(vote1.0, vote1.1, vote1.2, vote1.3);
+	let (precommit2, signed2) = signed_precommit(vote2.0, vote2.1, vote2.2, vote2.3);
 
 	sp_finality_grandpa::EquivocationProof::new(
 		set_id,
-		sp_finality_grandpa::Equivocation::Prevote(finality_grandpa::Equivocation {
+		sp_finality_grandpa::Equivocation::Precommit(finality_grandpa::Equivocation {
 			round_number: vote1.0,
 			identity: vote1.3.public().into(),
-			first: (prevote1, signed1),
-			second: (prevote2, signed2),
+			first: (precommit1, signed1),
+			second: (precommit2, signed2),
 		}),
 	)
 }

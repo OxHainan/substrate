@@ -95,8 +95,7 @@ pub type SignedMessage<Header> = grandpa::SignedMessage<
 /// A primary propose message for this chain's block type.
 pub type PrimaryPropose<Header> =
 	grandpa::PrimaryPropose<<Header as HeaderT>::Hash, <Header as HeaderT>::Number>;
-/// A prevote message for this chain's block type.
-pub type Prevote<Header> = grandpa::Prevote<<Header as HeaderT>::Hash, <Header as HeaderT>::Number>;
+
 /// A precommit message for this chain's block type.
 pub type Precommit<Header> =
 	grandpa::Precommit<<Header as HeaderT>::Hash, <Header as HeaderT>::Number>;
@@ -255,7 +254,6 @@ impl<H, N> EquivocationProof<H, N> {
 	/// Returns the round number at which the equivocation occurred.
 	pub fn round(&self) -> RoundNumber {
 		match self.equivocation {
-			Equivocation::Prevote(ref equivocation) => equivocation.round_number,
 			Equivocation::Precommit(ref equivocation) => equivocation.round_number,
 		}
 	}
@@ -270,24 +268,8 @@ impl<H, N> EquivocationProof<H, N> {
 /// and precommit equivocations under a common type.
 #[derive(Clone, Debug, Decode, Encode, PartialEq, TypeInfo)]
 pub enum Equivocation<H, N> {
-	/// Proof of equivocation at prevote stage.
-	Prevote(grandpa::Equivocation<AuthorityId, grandpa::Prevote<H, N>, AuthoritySignature>),
 	/// Proof of equivocation at precommit stage.
 	Precommit(grandpa::Equivocation<AuthorityId, grandpa::Precommit<H, N>, AuthoritySignature>),
-}
-
-impl<H, N> From<grandpa::Equivocation<AuthorityId, grandpa::Prevote<H, N>, AuthoritySignature>>
-	for Equivocation<H, N>
-{
-	fn from(
-		equivocation: grandpa::Equivocation<
-			AuthorityId,
-			grandpa::Prevote<H, N>,
-			AuthoritySignature,
-		>,
-	) -> Self {
-		Equivocation::Prevote(equivocation)
-	}
 }
 
 impl<H, N> From<grandpa::Equivocation<AuthorityId, grandpa::Precommit<H, N>, AuthoritySignature>>
@@ -308,7 +290,6 @@ impl<H, N> Equivocation<H, N> {
 	/// Returns the authority id of the equivocator.
 	pub fn offender(&self) -> &AuthorityId {
 		match self {
-			Equivocation::Prevote(ref equivocation) => &equivocation.identity,
 			Equivocation::Precommit(ref equivocation) => &equivocation.identity,
 		}
 	}
@@ -316,7 +297,6 @@ impl<H, N> Equivocation<H, N> {
 	/// Returns the round number when the equivocation happened.
 	pub fn round_number(&self) -> RoundNumber {
 		match self {
-			Equivocation::Prevote(ref equivocation) => equivocation.round_number,
 			Equivocation::Precommit(ref equivocation) => equivocation.round_number,
 		}
 	}
@@ -362,9 +342,6 @@ where
 	}
 
 	match report.equivocation {
-		Equivocation::Prevote(equivocation) => {
-			check!(equivocation, grandpa::Message::Prevote);
-		},
 		Equivocation::Precommit(equivocation) => {
 			check!(equivocation, grandpa::Message::Precommit);
 		},

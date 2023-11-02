@@ -490,10 +490,20 @@ where
 	/// Get the value of storage at given key.
 	pub fn storage(&self, key: &[u8]) -> Result<Option<StorageValue>> {
 		let map_e = |e| format!("Trie lookup error: {}", e);
+		let decrypt = |key, v: &[u8]| {
+			#[cfg(feature = "std")]
+			{
+				sp_core::aes::decrypt(v, key).unwrap()
+			}
+
+			#[cfg(not(feature = "std"))]
+			v.to_vec()
+		};
+
 		// use rustc_hex::ToHex;
 		self.with_recorder_and_cache(None, |recorder, cache| {
 			read_trie_value::<Layout<H>, _>(self, &self.root, key, recorder, cache)
-				.map(|x| x.as_ref().map(|v| sp_core::aes::decrypt(v.as_ref(), key).unwrap()))
+				.map(|x| x.as_ref().map(|v| decrypt(key, v.as_ref())))
 				.map_err(map_e)
 		})
 	}
@@ -595,7 +605,11 @@ where
 		let mut deltas: Vec<_> = Default::default();
 		for (key, val) in delta {
 			if let Some(val) = val {
+				#[cfg(feature = "std")]
 				deltas.push((key, Some(sp_core::aes::encrypt(val, key).unwrap())));
+
+				#[cfg(not(feature = "std"))]
+				deltas.push((key, Some(val)));
 			} else {
 				deltas.push((key, None));
 			}

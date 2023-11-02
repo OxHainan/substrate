@@ -241,7 +241,7 @@ fn voter_set_state() -> SharedVoterSetState<Block> {
 	use sp_finality_grandpa::AuthorityId;
 
 	let state = RoundState::genesis((H256::zero(), 0));
-	let base = state.prevote_ghost.unwrap();
+	let base = state.precommit_ghost.unwrap();
 
 	let voters = vec![(AuthorityId::from_slice(&[1; 32]).unwrap(), 1)];
 	let voters = AuthoritySet::genesis(voters).unwrap();

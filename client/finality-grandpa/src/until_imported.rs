@@ -478,20 +478,12 @@ impl<Block: BlockT> BlockUntilImported<Block> for BlockGlobalMessage<Block> {
 					}
 				},
 				voter::CommunicationIn::CatchUp(ref catch_up, ..) => {
-					// add known hashes from all prevotes and precommits.
-					let prevote_targets = catch_up
-						.prevotes
-						.iter()
-						.map(|s| (s.prevote.target_number, s.prevote.target_hash));
-
 					let precommit_targets = catch_up
 						.precommits
 						.iter()
 						.map(|s| (s.precommit.target_number, s.precommit.target_hash));
 
-					let targets = prevote_targets.chain(precommit_targets);
-
-					for (target_number, target_hash) in targets {
+					for (target_number, target_hash) in precommit_targets {
 						if !query_known(target_hash, target_number)? {
 							return Ok(DiscardWaitOrReady::Discard)
 						}
@@ -802,15 +794,6 @@ mod tests {
 		let h2 = make_header(6);
 		let h3 = make_header(7);
 
-		let signed_prevote = |header: &Header| finality_grandpa::SignedPrevote {
-			id: UncheckedFrom::unchecked_from([1; 32]),
-			signature: UncheckedFrom::unchecked_from([1; 64]),
-			prevote: finality_grandpa::Prevote {
-				target_hash: header.hash(),
-				target_number: *header.number(),
-			},
-		};
-
 		let signed_precommit = |header: &Header| finality_grandpa::SignedPrecommit {
 			id: UncheckedFrom::unchecked_from([1; 32]),
 			signature: UncheckedFrom::unchecked_from([1; 64]),
@@ -820,13 +803,10 @@ mod tests {
 			},
 		};
 
-		let prevotes = vec![signed_prevote(&h1), signed_prevote(&h3)];
-
 		let precommits = vec![signed_precommit(&h1), signed_precommit(&h2)];
 
 		let unknown_catch_up = finality_grandpa::CatchUp {
 			round_number: 1,
-			prevotes,
 			precommits,
 			base_hash: h1.hash(),
 			base_number: *h1.number(),
@@ -850,15 +830,6 @@ mod tests {
 		let h2 = make_header(6);
 		let h3 = make_header(7);
 
-		let signed_prevote = |header: &Header| finality_grandpa::SignedPrevote {
-			id: UncheckedFrom::unchecked_from([1; 32]),
-			signature: UncheckedFrom::unchecked_from([1; 64]),
-			prevote: finality_grandpa::Prevote {
-				target_hash: header.hash(),
-				target_number: *header.number(),
-			},
-		};
-
 		let signed_precommit = |header: &Header| finality_grandpa::SignedPrecommit {
 			id: UncheckedFrom::unchecked_from([1; 32]),
 			signature: UncheckedFrom::unchecked_from([1; 64]),
@@ -868,13 +839,10 @@ mod tests {
 			},
 		};
 
-		let prevotes = vec![signed_prevote(&h1), signed_prevote(&h3)];
-
 		let precommits = vec![signed_precommit(&h1), signed_precommit(&h2)];
 
 		let unknown_catch_up = finality_grandpa::CatchUp {
 			round_number: 1,
-			prevotes,
 			precommits,
 			base_hash: h1.hash(),
 			base_number: *h1.number(),
@@ -973,7 +941,6 @@ mod tests {
 		let unknown_catch_up = finality_grandpa::CatchUp {
 			round_number: 1,
 			precommits: vec![],
-			prevotes: vec![],
 			base_hash: header.hash(),
 			base_number: *header.number(),
 		};
